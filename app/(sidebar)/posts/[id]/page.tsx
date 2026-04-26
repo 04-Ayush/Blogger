@@ -14,6 +14,7 @@ type PostDetail = {
     id: string
     title: string
     body: string | null
+    summary: string | null
     image_url: string | null
     created_at: string | null
     author_id: string | null
@@ -38,7 +39,10 @@ export default function PostDetailPage() {
     const [error, setError] = useState<string | null>(null)
     const [deleting, setDeleting] = useState(false)
     const [role, setRole] = useState<Role>('viewer')
+    const [roleLoaded, setRoleLoaded] = useState(false)
     const [userId, setUserId] = useState<string | null>(null)
+    const [bookmarked, setBookmarked] = useState(false)
+    const [bookmarkBusy, setBookmarkBusy] = useState(false)
 
     useEffect(() => {
         let cancelled = false
@@ -59,11 +63,12 @@ export default function PostDetailPage() {
             const current = await getCurrentUserRole()
             if (cancelled) return
             setRole(current.role)
+            setRoleLoaded(true)
             setUserId(current.userId)
 
             const { data, error } = await supabase
                 .from('posts')
-                .select('id,title,body,image_url,created_at,author_id')
+                .select('id,title,body,summary,image_url,created_at,author_id')
                 .eq('id', id)
                 .single()
 
@@ -81,6 +86,7 @@ export default function PostDetailPage() {
                 id: String(data.id),
                 title: data.title ?? '',
                 body: data.body ?? null,
+                summary: data.summary ?? null,
                 image_url: data.image_url ?? null,
                 created_at: data.created_at ?? null,
                 author_id: data.author_id ?? null,
@@ -108,10 +114,75 @@ export default function PostDetailPage() {
         }
     }, [id, supabase])
 
+    useEffect(() => {
+        let cancelled = false
+
+            ; (async () => {
+                if (!userId || !post?.id) {
+                    setBookmarked(false)
+                    return
+                }
+
+                const { data, error } = await supabase
+                    .from('bookmarks')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .eq('post_id', post.id)
+                    .maybeSingle()
+
+                if (cancelled) return
+
+                if (error) {
+                    setBookmarked(false)
+                    return
+                }
+
+                setBookmarked(Boolean(data))
+            })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [post?.id, supabase, userId])
+
+    const toggleBookmark = async () => {
+        if (!post?.id) return
+        if (!userId) {
+            router.push('/login')
+            return
+        }
+        if (bookmarkBusy) return
+
+        const wasBookmarked = bookmarked
+        setBookmarkBusy(true)
+        setBookmarked(!wasBookmarked)
+
+        try {
+            if (wasBookmarked) {
+                const { error } = await supabase
+                    .from('bookmarks')
+                    .delete()
+                    .eq('user_id', userId)
+                    .eq('post_id', post.id)
+                if (error) throw error
+            } else {
+                const { error } = await supabase
+                    .from('bookmarks')
+                    .insert([{ user_id: userId, post_id: post.id }])
+                if (error) throw error
+            }
+        } catch {
+            setBookmarked(wasBookmarked)
+        } finally {
+            setBookmarkBusy(false)
+        }
+    }
+
     const allowEdit = canEditPost(role, post?.author_id, userId)
+    const canSeeSummary = roleLoaded && role !== 'author'
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+        <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-slate-950">
             <Navbar />
 
             <div className="flex min-h-screen">
@@ -216,7 +287,39 @@ export default function PostDetailPage() {
                     ) : (
                         <>
                             <article className="max-w-4xl overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
-                                <div className="relative aspect-[16/7] w-full bg-slate-950/40">
+                                <div className="relative aspect-16/7 w-full bg-slate-950/40">
+                                    <button
+                                        type="button"
+                                        aria-label={bookmarked ? 'Remove bookmark' : 'Add bookmark'}
+                                        aria-pressed={bookmarked}
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            void toggleBookmark()
+                                        }}
+                                        disabled={bookmarkBusy}
+                                        className={[
+                                            'absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/55 text-white/80 backdrop-blur transition',
+                                            'hover:bg-white/10',
+                                            bookmarkBusy ? 'cursor-not-allowed opacity-60' : '',
+                                        ].join(' ')}
+                                    >
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            className={['h-5 w-5', bookmarked ? 'text-emerald-300' : 'text-white/75'].join(
+                                                ' '
+                                            )}
+                                            fill={bookmarked ? 'currentColor' : 'none'}
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M7.5 4.6h9c.9 0 1.6.7 1.6 1.6v15.2l-6.1-3.7-6.1 3.7V6.2c0-.9.7-1.6 1.6-1.6Z"
+                                                stroke="currentColor"
+                                                strokeWidth="1.6"
+                                                strokeLinejoin="round"
+                                            />
+                                        </svg>
+                                    </button>
+
                                     {post.image_url ? (
                                         // eslint-disable-next-line @next/next/no-img-element
                                         <img
@@ -229,13 +332,25 @@ export default function PostDetailPage() {
                                             No image
                                         </div>
                                     )}
-                                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                                    <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/55 via-black/10 to-transparent" />
                                 </div>
 
                                 <div className="p-6 sm:p-8">
                                     <h2 className="text-xl font-semibold tracking-tight text-white">
                                         {post.title || 'Untitled'}
                                     </h2>
+
+                                    {canSeeSummary && post.summary ? (
+                                        <div className="mt-4 rounded-2xl border border-emerald-500/15 bg-emerald-500/10 p-4">
+                                            <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-300">
+                                                AI Summary
+                                            </p>
+                                            <p className="mt-2 text-sm leading-7 text-white/75">
+                                                {post.summary}
+                                            </p>
+                                        </div>
+                                    ) : null}
+
                                     <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-white/75">
                                         {post.body || 'No content.'}
                                     </div>
