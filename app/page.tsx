@@ -2,11 +2,11 @@ import Link from 'next/link'
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
       {/* Background Glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-10%] h-[400px] w-[400px] rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[450px] w-[450px] rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute left-[-10%] top-[-10%] h-100 w-100 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-100 w-100 rounded-full bg-cyan-500/10 blur-3xl" />
       </div>
 
       {/* Navbar */}
@@ -93,7 +93,7 @@ export default function LandingPage() {
           <div className="relative">
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
               <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5">
-                <div className="h-52 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/20" />
+                <div className="h-52 rounded-2xl bg-linear-to-br from-emerald-500/30 to-cyan-500/20" />
 
                 <div className="mt-5">
                   <div className="text-xl font-semibold">
@@ -260,7 +260,7 @@ export default function LandingPage() {
               key={card}
               className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 transition hover:-translate-y-1 hover:bg-white/10"
             >
-              <div className="h-52 bg-gradient-to-br from-slate-800 to-slate-700" />
+              <div className="h-52 bg-linear-to-br from-slate-800 to-slate-700" />
 
               <div className="p-6">
                 <div className="text-lg font-semibold">
