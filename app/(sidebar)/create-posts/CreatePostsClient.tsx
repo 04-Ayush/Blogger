@@ -57,25 +57,24 @@ function writeCache(cache: SummaryCache) {
   }
 }
 
-async function generateSummary(bodyText: string) {
+async function generateSummary(bodyText: string): Promise<string | null> {
   const res = await fetch('/api/generate-summary', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ bodyText }),
   })
 
-  const json = (await res.json().catch(() => null)) as null | { summary?: string; error?: string }
+  const json = (await res.json().catch(() => null)) as null | { summary?: string | null; error?: string }
 
   if (!res.ok) {
     throw new Error(json?.error || 'Failed to generate summary.')
   }
 
   const summary = String(json?.summary ?? '').trim()
-  if (!summary) throw new Error('Generated summary was empty.')
-  return summary
+  return summary || null
 }
 
-async function getOrGenerateSummary(bodyText: string) {
+async function getOrGenerateSummary(bodyText: string): Promise<string | null> {
   const text = bodyText.trim()
   const key = await sha256(text)
 
@@ -84,8 +83,10 @@ async function getOrGenerateSummary(bodyText: string) {
   if (cached) return cached
 
   const summary = await generateSummary(text)
-  cache[key] = { summary, createdAt: Date.now() }
-  writeCache(cache)
+  if (summary) {
+    cache[key] = { summary, createdAt: Date.now() }
+    writeCache(cache)
+  }
   return summary
 }
 
@@ -105,31 +106,31 @@ export default function CreatePostsClientPage() {
   useEffect(() => {
     let cancelled = false
 
-    ;(async () => {
-      const current = await getCurrentUserRole()
-      if (cancelled) return
+      ; (async () => {
+        const current = await getCurrentUserRole()
+        if (cancelled) return
 
-      setRole(current.role)
-      setUserId(current.userId)
+        setRole(current.role)
+        setUserId(current.userId)
 
-      if (!current.userId) {
-        router.push('/login')
-        return
-      }
-
-      // Only authors can create new posts; admins can only edit existing posts.
-      if (!postId) {
-        if (!canCreatePosts(current.role)) {
-          router.push('/posts')
+        if (!current.userId) {
+          router.push('/login')
           return
         }
-      } else {
-        if (current.role === 'viewer') {
-          router.push('/posts')
-          return
+
+        // Only authors can create new posts; admins can only edit existing posts.
+        if (!postId) {
+          if (!canCreatePosts(current.role)) {
+            router.push('/posts')
+            return
+          }
+        } else {
+          if (current.role === 'viewer') {
+            router.push('/posts')
+            return
+          }
         }
-      }
-    })()
+      })()
 
     return () => {
       cancelled = true
@@ -141,49 +142,49 @@ export default function CreatePostsClientPage() {
 
     if (!postId) return
 
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      setSuccess(null)
+      ; (async () => {
+        setLoading(true)
+        setError(null)
+        setSuccess(null)
 
-      try {
-        const current = await getCurrentUserRole()
-        if (!current.userId) {
-          setError('You must be logged in to edit a post.')
-          router.push('/login')
-          return
+        try {
+          const current = await getCurrentUserRole()
+          if (!current.userId) {
+            setError('You must be logged in to edit a post.')
+            router.push('/login')
+            return
+          }
+
+          if (current.role === 'viewer') {
+            setError('You do not have permission to edit posts.')
+            router.push('/posts')
+            return
+          }
+
+          let q = supabase.from('posts').select('id,title,image_url,body').eq('id', postId)
+
+          if (!isAdmin(current.role)) {
+            q = q.eq('author_id', current.userId)
+          }
+
+          const { data, error: loadError } = await q.single()
+
+          if (loadError) throw loadError
+          if (cancelled) return
+
+          setForm({
+            title: data?.title ?? '',
+            image_url: data?.image_url ?? '',
+            body: data?.body ?? '',
+          })
+        } catch (err) {
+          if (cancelled) return
+          const message = err instanceof Error ? err.message : 'Failed to load post for editing.'
+          setError(message)
+        } finally {
+          if (!cancelled) setLoading(false)
         }
-
-        if (current.role === 'viewer') {
-          setError('You do not have permission to edit posts.')
-          router.push('/posts')
-          return
-        }
-
-        let q = supabase.from('posts').select('id,title,image_url,body').eq('id', postId)
-
-        if (!isAdmin(current.role)) {
-          q = q.eq('author_id', current.userId)
-        }
-
-        const { data, error: loadError } = await q.single()
-
-        if (loadError) throw loadError
-        if (cancelled) return
-
-        setForm({
-          title: data?.title ?? '',
-          image_url: data?.image_url ?? '',
-          body: data?.body ?? '',
-        })
-      } catch (err) {
-        if (cancelled) return
-        const message = err instanceof Error ? err.message : 'Failed to load post for editing.'
-        setError(message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
+      })()
 
     return () => {
       cancelled = true
@@ -244,15 +245,25 @@ export default function CreatePostsClientPage() {
         if (updateError) throw updateError
       } else {
         // Generate once on creation and store to DB (never regenerate on refresh).
-        const summary = await getOrGenerateSummary(parsed.data.body)
+        let summary: string | null = null
+        try {
+          summary = await getOrGenerateSummary(parsed.data.body)
+        } catch {
+          summary = null
+        }
 
-        const { error: insertError } = await supabase.from('posts').insert({
+        const payload: Record<string, any> = {
           title: parsed.data.title,
           body: parsed.data.body,
           image_url: parsed.data.image_url,
           author_id: current.userId,
-          summary,
-        })
+        }
+
+        if (summary) {
+          payload.summary = summary
+        }
+
+        const { error: insertError } = await supabase.from('posts').insert(payload)
 
         if (insertError) throw insertError
       }
@@ -269,7 +280,7 @@ export default function CreatePostsClientPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-slate-950">
       <Navbar />
 
       <div className="flex min-h-screen">
