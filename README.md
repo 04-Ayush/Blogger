@@ -47,7 +47,7 @@ This platform supports role-based authentication, blog creation, comments, AI-ge
 
 ## Deployment
 
-* Vercel / Netlify
+* Vercel 
 
 ---
 
@@ -57,7 +57,7 @@ This platform supports role-based authentication, blog creation, comments, AI-ge
 app/
 components/
 lib/
-middleware.ts
+proxy.ts
 public/
 types/
 ```
@@ -69,11 +69,11 @@ types/
 ## 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-username/blogger-platform.git
+git clone https://github.com/your-username/Blogger.git
 ```
 
 ```bash
-cd blogger-platform
+cd blogger
 ```
 
 ---
@@ -127,8 +127,8 @@ Create these tables:
 | title     | TEXT |
 | body      | TEXT |
 | image_url | TEXT |
-| author_id | UUID |
 | summary   | TEXT |
+| author_id | UUID |
 
 ---
 
@@ -140,6 +140,16 @@ Create these tables:
 | post_id      | UUID |
 | user_id      | UUID |
 | comment_text | TEXT |
+
+---
+
+### Bookmarks Table
+
+| Column       | Type |
+| ------------ | ---- |
+| id           | UUID |
+| user_id      | UUID |
+| post_id      | UUID |
 
 ---
 
@@ -224,6 +234,4 @@ Click Deploy.
 
 ---
 
-# Author
 
-Developed as part of internship assignment using AI-assisted development workflow.

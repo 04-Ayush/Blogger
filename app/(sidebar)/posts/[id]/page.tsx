@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 import Navbar from '@/app/components/Navbar'
@@ -38,6 +38,10 @@ export default function PostDetailPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [deleting, setDeleting] = useState(false)
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [deleteDialogVisible, setDeleteDialogVisible] = useState(false)
+    const deleteDialogCloseTimer = useRef<number | null>(null)
+    const DELETE_DIALOG_ANIM_MS = 160
     const [role, setRole] = useState<Role>('viewer')
     const [roleLoaded, setRoleLoaded] = useState(false)
     const [userId, setUserId] = useState<string | null>(null)
@@ -181,6 +185,55 @@ export default function PostDetailPage() {
     const allowEdit = canEditPost(role, post?.author_id, userId)
     const canSeeSummary = roleLoaded && role !== 'author'
 
+    const closeDeleteDialog = useCallback(() => {
+        if (deleting) return
+        setDeleteDialogVisible(false)
+        if (deleteDialogCloseTimer.current) {
+            window.clearTimeout(deleteDialogCloseTimer.current)
+        }
+        deleteDialogCloseTimer.current = window.setTimeout(() => {
+            setDeleteDialogOpen(false)
+        }, DELETE_DIALOG_ANIM_MS)
+    }, [DELETE_DIALOG_ANIM_MS, deleting])
+
+    useEffect(() => {
+        return () => {
+            if (deleteDialogCloseTimer.current) {
+                window.clearTimeout(deleteDialogCloseTimer.current)
+            }
+        }
+    }, [])
+
+    const confirmDelete = async () => {
+        if (!id || deleting) return
+
+        setDeleting(true)
+        setError(null)
+        try {
+            const current = await getCurrentUserRole()
+            if (!current.userId) {
+                setError('You must be logged in to delete a post.')
+                return
+            }
+
+            let del = supabase.from('posts').delete().eq('id', String(id))
+            if (!isAdmin(current.role)) {
+                del = del.eq('author_id', current.userId)
+            }
+
+            const { error: deleteError } = await del
+            if (deleteError) throw deleteError
+
+            router.push('/posts')
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to delete post.'
+            setError(message)
+        } finally {
+            setDeleting(false)
+            closeDeleteDialog()
+        }
+    }
+
     return (
         <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-slate-950">
             <Navbar />
@@ -189,6 +242,63 @@ export default function PostDetailPage() {
                 <Sidebar />
 
                 <main className="flex-1 px-4 py-6">
+                    {deleteDialogOpen ? (
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Delete post confirmation"
+                            className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+                        >
+                            <button
+                                type="button"
+                                aria-label="Close"
+                                onClick={() => {
+                                    closeDeleteDialog()
+                                }}
+                                className={[
+                                    'absolute inset-0 bg-black/60 transition-opacity duration-150 ease-out',
+                                    deleteDialogVisible ? 'opacity-100' : 'opacity-0',
+                                    'motion-reduce:transition-none',
+                                ].join(' ')}
+                            />
+
+                            <div
+                                className={[
+                                    'relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/90 p-5 backdrop-blur',
+                                    'transform-gpu transition-[transform,opacity] duration-150 ease-out will-change-transform',
+                                    deleteDialogVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0',
+                                    'motion-reduce:transition-none motion-reduce:transform-none',
+                                ].join(' ')}
+                            >
+                                <h2 className="text-base font-semibold tracking-tight text-white">
+                                    Delete this post?
+                                </h2>
+                                <p className="mt-2 text-sm leading-6 text-white/70">
+                                    This action cannot be undone.
+                                </p>
+
+                                <div className="mt-5 flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={deleting}
+                                        onClick={() => closeDeleteDialog()}
+                                        className="inline-flex h-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={deleting}
+                                        onClick={() => void confirmDelete()}
+                                        className="inline-flex h-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-sm font-medium text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {deleting ? 'Deleting…' : 'Delete'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
+
                     <div className="mb-6 flex items-center justify-between gap-3">
                         <div>
                             <h1 className="text-2xl font-semibold tracking-tight text-white">
@@ -233,35 +343,15 @@ export default function PostDetailPage() {
                                     <button
                                         type="button"
                                         disabled={!id || loading || deleting}
-                                        onClick={async () => {
+                                        onClick={() => {
                                             if (!id || deleting) return
-                                            const ok = window.confirm('Delete this post? This action cannot be undone.')
-                                            if (!ok) return
-
-                                            setDeleting(true)
-                                            try {
-                                                const current = await getCurrentUserRole()
-                                                if (!current.userId) {
-                                                    setError('You must be logged in to delete a post.')
-                                                    return
-                                                }
-
-                                                let del = supabase.from('posts').delete().eq('id', String(id))
-                                                if (!isAdmin(current.role)) {
-                                                    del = del.eq('author_id', current.userId)
-                                                }
-
-                                                const { error: deleteError } = await del
-                                                if (deleteError) throw deleteError
-
-                                                router.push('/posts')
-                                            } catch (err) {
-                                                const message =
-                                                    err instanceof Error ? err.message : 'Failed to delete post.'
-                                                setError(message)
-                                            } finally {
-                                                setDeleting(false)
+                                            setDeleteDialogOpen(true)
+                                            setDeleteDialogVisible(false)
+                                            if (deleteDialogCloseTimer.current) {
+                                                window.clearTimeout(deleteDialogCloseTimer.current)
+                                                deleteDialogCloseTimer.current = null
                                             }
+                                            window.requestAnimationFrame(() => setDeleteDialogVisible(true))
                                         }}
                                         className="inline-flex h-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-sm font-medium text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
