@@ -11,16 +11,35 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState('viewer')
+  const [errorMessage, setErrorMessage] = useState('')
   const router = useRouter()
 
   const handleRegister = async () => {
+    setErrorMessage('')
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
     })
 
     if (error) {
-      console.log('Auth Error:', error.message)
+      const message = (error.message || '').toLowerCase()
+      if (
+        message.includes('already registered') ||
+        message.includes('already in use') ||
+        message.includes('user already exists')
+      ) {
+        setErrorMessage('This email is already registered. Please login instead.')
+      } else {
+        setErrorMessage(error.message)
+      }
+      return
+    }
+
+    // Supabase can return a user object with an empty identities array when
+    // attempting to sign up with an email that already exists.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setErrorMessage('This email is already registered. Please login instead.')
       return
     }
 
@@ -30,22 +49,20 @@ export default function RegisterPage() {
           id: data.user.id,
           name: name,
           email: email,
-          role : role,
+          role: role,
         },
       ])
 
-      router.push('/dashboard')
-
       if (insertError) {
-        console.log('Insert Error:', insertError.message)
+        setErrorMessage(insertError.message)
       } else {
-        console.log('User inserted successfully')
+        router.push('/verification')
       }
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-4 py-10">
         <div className="grid w-full gap-8 lg:grid-cols-2 lg:items-center">
           {/* Left marketing panel (hidden on small screens) */}
@@ -140,6 +157,12 @@ export default function RegisterPage() {
                     </label>
                   </div>
                 </div>
+
+                {errorMessage && (
+                  <p className="text-sm text-red-400">
+                    {errorMessage}
+                  </p>
+                )}
 
                 <button
                   className="mt-2 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/20 active:translate-y-px"
